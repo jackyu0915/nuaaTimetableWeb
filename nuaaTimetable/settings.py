@@ -79,10 +79,10 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'nuaatimetable',
-        'HOST': 'bt.jackyu.club',
+        'HOST': 'yourhost',
         'PORT': '3306',
         'USER': 'nuaatimetable',
-        'PASSWORD': 'KnXtyxwZ6T5nLk7M',
+        'PASSWORD': 'yourpassword',
     }
 }
 
