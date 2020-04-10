@@ -186,7 +186,7 @@ def home(request):
         if str(list[0]) == "体育":
             continue
         weeks = list[3]
-        weeks = list[3][:2] + '-' + list[3][-3:]
+        weeks = list[3][:3] + '-' + list[3][-3:]
         weeks = weeks.replace(',', '')
         # print(weeks)
         a = str(list[4])
