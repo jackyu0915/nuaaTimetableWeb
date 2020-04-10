@@ -70,7 +70,7 @@ def aao_logins(request):
         logintimes = int(userInfo.times)
         print('------------')
         print(logintimes)
-        if userInfo:
+        if userInfo != '':
             if userInfo.pwd == stuPwd:
                 # 记录登陆次数
                 logintimes = logintimes + 1
@@ -99,33 +99,39 @@ def aao_logins(request):
                 semester_start_date = datetime(2020, 3, 16, 0, 0, 0, tzinfo=timezone('Asia/Shanghai'))
 
                 # 百度文字识别接口识别，每天免费500次，这里调用了两次，防止不一样
-                captcha_str = ''
-                while True:
-                    # Captcha 验证码 # Fix Issue #13 bug, but only for Windows & MacOS.
-                    captcha_resp = session.get(host + '/eams/captcha/image.action')  # Captcha 验证码图片
-                    captcha_img = Image.open(BytesIO(captcha_resp.content))
-                    # captcha_img.show()  # show the captcha
-                    cap = captcha_img.resize((95, 35), Image.ANTIALIAS)
-                    cap.save("cap0417.png")
-                    captcha_str = img_to_str('cap0417.png')
-                    captcha_str = captcha_str.replace(' ', '')
-                    # 由于使用了精确文字识别，经常只显示三个字母
-                    if len(captcha_str) > 3:
-                        break
+                try:
+                    captcha_str = ''
+                    while True:
+                        # Captcha 验证码 # Fix Issue #13 bug, but only for Windows & MacOS.
+                        captcha_resp = session.get(host + '/eams/captcha/image.action')  # Captcha 验证码图片
+                        captcha_img = Image.open(BytesIO(captcha_resp.content))
+                        # captcha_img.show()  # show the captcha
+                        cap = captcha_img.resize((95, 35), Image.ANTIALIAS)
+                        cap.save("cap0417.png")
+                        captcha_str = img_to_str('cap0417.png')
+                        captcha_str = captcha_str.replace(' ', '')
+                        # 由于使用了精确文字识别，经常只显示三个字母
+                        if len(captcha_str) > 3:
+                            break
+                    print(captcha_str)
+                    name = aao_login(stuID, stuPwd, captcha_str, retry_cnt)
+                    temp_time = time.time()  # 计个时看看
+                    print('\n## Meow~下面开始获取{}课表啦！\n'.format({0: '个人', 1: '班级'}.get(choice)))
+                    courseTable = getCourseTable(choice=choice)
 
-                print(captcha_str)
-                name = aao_login(stuID, stuPwd, captcha_str, retry_cnt)
-                temp_time = time.time()  # 计个时看看
-                print('\n## Meow~下面开始获取{}课表啦！\n'.format({0: '个人', 1: '班级'}.get(choice)))
-                courseTable = getCourseTable(choice=choice)
-
-                list_lessonObj = parseCourseTable(courseTable)
-                for lesson in list_lessonObj:
-                    models.lesson_info.objects.create(info=lesson, user=stuID)
-                print('## 下面开始获取考试信息啦！\n')
-                examSchedule = getExamSchedule()
-                list_examObj = parseExamSchedule(examSchedule)
-
+                    list_lessonObj = parseCourseTable(courseTable)
+                    for lesson in list_lessonObj:
+                        models.lesson_info.objects.create(info=lesson, user=stuID)
+                    print('## 下面开始获取考试信息啦！\n')
+                    examSchedule = getExamSchedule()
+                    list_examObj = parseExamSchedule(examSchedule)
+                except Exception as e:
+                    print("ERROR! 欢迎在GitHub上提出issue & Pull Request!")
+                    print(e)
+                finally:
+                    session.cookies.clear()  # 清一下cookie
+                    if system_platform() == 'Windows':  # Fix Linux `sh: 1: pause: not found` bug
+                        os.system('pause')
                 return ret
             else:
                 error = '用户名或者密码错误'
@@ -146,10 +152,10 @@ def login_requires(func):
     return inner
 
 
-
 @login_requires
 def index(request):
     return redirect('/home/')
+
 
 # 课表主页
 @login_requires
@@ -159,10 +165,10 @@ def home(request):
     # print(user1)
     infos1 = models.lesson_info.objects.values_list('user', 'info')
     # print(infos1[1])
-    infos =[]
+    infos = []
     for i in infos1:
         infos.append(i)
-    print(infos)
+    # print(infos)
     # 处理数据
     les_info = []
     les_info1 = []
@@ -172,16 +178,17 @@ def home(request):
             les_info1 = str(info[1]).split('|')
             # print(les_info1)
             les_info.append(les_info1)
-    print(les_info)
+    print('上课信息获取成功')
+    # print(les_info)
     # 生成二维列表
     list_lesson = [['' for i in range(11)] for j in range(7)]
     for list in les_info:
         if str(list[0]) == "体育":
             continue
         weeks = list[3]
-        weeks = list[3][:3]+'-'+list[3][-3:]
-        weeks = weeks.replace(',','')
-        print(weeks)
+        weeks = list[3][:3] + '-' + list[3][-3:]
+        weeks = weeks.replace(',', '')
+        # print(weeks)
         a = str(list[4])
         times = a
         times = times.replace('星期', '')
@@ -190,13 +197,13 @@ def home(request):
         times1 = times.split(',')
         lenth = len(times1)
         for l in range(1, lenth):
-            a = int(times1[0])-1
-            b = int(times1[l])-1
+            a = int(times1[0]) - 1
+            b = int(times1[l]) - 1
             # print(a,b)
-            list_lesson[a][b] = str(list[0])+'@'+str(list[2])+'\n'+str(weeks)
+            list_lesson[a][b] = str(list[0]) + '@' + str(list[2]) + '\n' + str(weeks)
     # print(list_lesson)
 
-    return render(request, 'timetable.html', {'courseList':json.dumps(list_lesson)})
+    return render(request, 'timetable.html', {'courseList': json.dumps(list_lesson)})
 
 
 def all_timetable(requests):
