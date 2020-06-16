@@ -3,7 +3,7 @@
 """
 getClassSchedule  登录教务系统，获取课表，进行解析及导出
 
-@Author: MiaoTony
+@Author: MiaoTony,JackYu
 """
 
 import requests
@@ -21,6 +21,7 @@ from io import BytesIO
 # from pytesseract import image_to_string
 from timetable.lessonObj import Lesson
 from timetable.examObj import Exam
+from aip import AipOcr
 
 session = requests.Session()
 UAs = [
@@ -83,6 +84,39 @@ headers = {
 session.headers = headers
 host = r'http://aao-eas.nuaa.edu.cn'
 
+# 文字识别
+def get_file_content(file):
+    with open(file, 'rb') as fp:
+        return fp.read()
+
+def img_to_str(image_path):
+    config = {
+        'appId': '19099446',
+        'apiKey': 'CaKSFYkYzCl98K6hVxT1ji2q',
+        'secretKey': 'cgW37s22yBcXVVCDFbA99pxy7gE8h9Pl'
+    }
+    client = AipOcr(**config)
+    image = get_file_content(image_path)
+    options = {}
+    options["language_type"] = "ENG"
+    # 低精度版
+    # result = client.basicGeneral(image, options)
+    # 高精度版
+    result = client.basicAccurate(image, options)
+    # 正确的返回内容
+    # {'log_id': 6209448477332784560, 'words_result_num': 1, 'words_result': [{'words': 'UKhi '}]}
+    # 错误码例子
+    # errorcode = {
+    #     "error_code": 110,
+    #     "error_msg": "Access token invalid or no longer valid"
+    # }
+    # 错误码为17代表当日500次用完 ,18代表QPS超限额
+    if 'error_code' in result:
+        if result['error_code'] == 17:
+            result = client.basicGeneral(image, options)
+    if 'words_result' in result:
+        return '\n'.join([w['words'] for w in result['words_result']])
+
 
 def aao_login(stuID, stuPwd, captcha_str, retry_cnt=1):
     """
@@ -95,14 +129,35 @@ def aao_login(stuID, stuPwd, captcha_str, retry_cnt=1):
     try_cnt = 1
     while try_cnt <= retry_cnt:
         # session.cookies.clear()  # 先清一下cookie
-        # session.c
+
         r1 = session.get(host + '/eams/login.action')
         # logging.debug(r1.text)
         # captcha_resp = session.get(host + '/eams/captcha/image.action')  # Captcha 验证码图片
 
+        # 验证码识别
+        captcha_str = ''
+        while True:
+            t = time.time()
+            timenow = int(round(t * 1000))
+            # print(timenow)
+            # Captcha 验证码
+            captcha_resp = session.get(host + '/eams/captcha/image.action?d=' + str(timenow))  # Captcha 验证码图片
+            captcha_img = Image.open(BytesIO(captcha_resp.content))
+            # captcha_img.show()  # show the captcha
+            cap = captcha_img.resize((95, 35), Image.ANTIALIAS)
+            cap.save("cap" + str(stuID) + ".png")
+            captcha_str = img_to_str('cap' + str(stuID) + '.png')
+            captcha_str = captcha_str.replace(' ', '')
+            # 由于使用了精确文字识别，经常只显示三个字母
+            if len(captcha_str) > 3:
+                break
+
+        print("本次验证码是："+captcha_str)
         temp_token_match = re.compile(r"CryptoJS\.SHA1\(\'([0-9a-zA-Z\-]*)\'")
+
         # 搜索密钥
-        if temp_token_match.search(r1.text):
+        content = r1.text
+        if temp_token_match.search(content):
             print("Search token OK!")
             temp_token = temp_token_match.search(r1.text).group(1)
             logging.debug(temp_token)
@@ -115,16 +170,6 @@ def aao_login(stuID, stuPwd, captcha_str, retry_cnt=1):
             postPwd = s1.hexdigest()  # 加密处理
             # logging.debug(postPwd)  # 结果是40位字符串
 
-            # Captcha 验证码 # Fix Issue #13 bug, but only for Windows.
-            # captcha_img = Image.open(BytesIO(captcha_resp.content))
-            # captcha_img.show()  # show the captcha
-
-            # img= ImageTk.PhotoImage(captcha_img)
-            # label_img = tkinter.ttk.Label(window, image = img).place(x = 560, y = 2)
-
-            # text = image_to_string(captcha_img)  # 前提是装了Tesseract-OCR，可以试试自动识别
-            # print(text)
-            # captcha_str = input('Please input the captcha:')
 
             # 开始登录啦
             postData = {'username': stuID, 'password': postPwd, 'captcha_response': captcha_str}
@@ -134,7 +179,7 @@ def aao_login(stuID, stuPwd, captcha_str, retry_cnt=1):
                 logging.debug(r2.text)
                 temp_key = temp_token_match.search(r2.text)
                 if temp_key:  # 找到密钥说明没有登录成功，需要重试
-                    print("ID, Password or Captcha ERROR! Login ERROR!\n")
+                    print("学号与密码错误或者验证码识别出错，请重新登录\n")
                     temp_key = temp_key.group(1)
                     logging.debug(temp_key)
                     exit(2)
@@ -150,13 +195,15 @@ def aao_login(stuID, stuPwd, captcha_str, retry_cnt=1):
                     print("Login OK!\nHello, {}!".format(name))
                     return name
             else:
-                print("Login ERROR!\n")
-                exit(1)
+                print("登录失败!\n")
+                # exit(1)
+                return "error"
         else:
             print('Search token ERROR!\n')
-            exit(1)
+            # exit(1)
+            return "error"
     print("ERROR! 过一会儿再试试吧...\n")
-    exit(3)
+    # exit(3)
 
 
 def getCourseTable(choice=0):
@@ -165,7 +212,7 @@ def getCourseTable(choice=0):
     :param choice: 0 for std, 1 for class.个人课表or班级课表，默认为个人课表。
     :return:courseTable: {Response} 课表html响应
     """
-    time.sleep(0.5)  # fix Issue #2 `Too Quick Click` bug
+    time.sleep(0.3)  # fix Issue #2 `Too Quick Click` bug
     courseTableResponse = session.get(host + '/eams/courseTableForStd.action')
     # logging.debug(courseTableResponse.text)
 
@@ -278,45 +325,3 @@ def parseCourseTable(courseTable):
         course_cnt += 1
         print()
     return list_lessonObj
-
-
-def getExamSchedule():
-    """
-    获取考试安排
-    :return:Ans_list: {list} 考试安排列表
-    """
-    time.sleep(0.5)
-    examSchedule = session.get(host + r'/eams/examSearchForStd!examTable.action')
-
-    soup = BeautifulSoup(examSchedule.text.encode('utf-8'), 'lxml')
-    '''exam Schedule'''
-    exam_Schedule_Text = soup.select('tbody > tr')
-    print(exam_Schedule_Text)
-    Ans_list = []
-
-    if exam_Schedule_Text:  # add a protection
-        for single_exam_Schedule in exam_Schedule_Text:
-            tmp = []
-            single_exam_Schedule = single_exam_Schedule.find_all('td')
-            if single_exam_Schedule:  # add a protection
-                for i in single_exam_Schedule:
-                    tmp.append(i.get_text().strip())
-                Ans_list.append(tmp)
-    return Ans_list
-
-
-def parseExamSchedule(exams):
-    '''
-    解析考试列表
-    :return: examObj
-    '''
-    list_examObj = []
-    if len(exams) > 0:
-        for exam in exams:
-            temp_ExamObj = Exam(exam)
-            print(temp_ExamObj.str_for_print)  # print the exam info
-            list_examObj.append(Exam(exam))
-    else:
-        print('暂无考试安排！')
-    return list_examObj
-    # return map(Exam,exams)

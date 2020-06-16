@@ -78,11 +78,11 @@ WSGI_APPLICATION = 'nuaaTimetable.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'nuaatimetable',
-        'HOST': 'yourhost',
+        'NAME': 'nuaatimetable1',
+        'HOST': 'bt.jackyu.club',
         'PORT': '3306',
-        'USER': 'nuaatimetable',
-        'PASSWORD': 'yourpassword',
+        'USER': 'nuaatimetable1',
+        'PASSWORD': 'BDiaAHkEknHm3Xyw',
     }
 }
 
